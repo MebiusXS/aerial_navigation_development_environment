@@ -41,13 +41,13 @@ double depthCamXOffset = 0;                             //
 double depthCamYOffset = 0;                             // 
 double depthCamZOffset = 0;                             // 
 bool trackingCamBackward = false;                       // whether the camera is installed backward
-double trackingCamXOffset = 0;                          // the X offset of the camera relative to vehicle
-double trackingCamYOffset = 0;                          // the Y offset of the camera relative to vehicle
-double trackingCamZOffset = 0;                          // the Z offset of the camera relative to vehicle
+double trackingCamXOffset = 0;                          // the X offset of the camera with reference to the center of the vehicle
+double trackingCamYOffset = 0;                          // the Y offset of the camera with reference to the center of the vehicle
+double trackingCamZOffset = 0;                          // the Z offset of the camera with reference to the center of the vehicle
 double trackingCamScale = 1.0;                          // 
-double scanVoxelSize = 0.1;                             // 
-const int laserCloudStackNum = 1;                       // 
-int laserCloudCount = 0;                                // 
+double scanVoxelSize = 0.1;                             // point cloud voxel size
+const int laserCloudStackNum = 1;                       // the number of frames for which you want to accumulate point clouds
+int laserCloudCount = 0;                                // the index for laserCloudStack, starting with 0
 int pointPerPathThre = 2;                               // 
 double maxRange = 4.0;                                  // the max range of laser
 double maxElev = 5.0;                                   // the upper limit of goalZ
@@ -260,12 +260,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       float pointY1 = -laserCloudDwz->points[i].x;
       float pointZ1 = -laserCloudDwz->points[i].y;
 
-      // transfer the points relative to vehicle coordinates, despite the orientation
+      // align the points to the vehicle coordinates, despite the orientation
       float pointX2 = pointX1 * cosDepthCamPitch + pointZ1 * sinDepthCamPitch + depthCamXOffset;
       float pointY2 = pointY1 + depthCamYOffset;
       float pointZ2 = -pointX1 * sinDepthCamPitch + pointZ1 * cosDepthCamPitch + depthCamZOffset;
 
-      // transfer the points relative to vehicle coordinates with roll and pitch
+      // align the points to the vehicle coordinates with roll and pitch
       float pointX3 = pointX2;
       float pointY3 = pointY2 * cosVehicleRoll - pointZ2 * sinVehicleRoll;
       float pointZ3 = pointY2 * sinVehicleRoll + pointZ2 * cosVehicleRoll;
@@ -274,7 +274,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       float pointY4 = pointY3;
       float pointZ4 = -pointX3 * sinVehiclePitch + pointZ3 * cosVehiclePitch;
 
-      // transfer the points relative to vehicle odometry coordinates and store in laserCloudDwz
+      // align the points to the vehicle odometry coordinates and store in laserCloudDwz
       laserCloudDwz->points[i].x = pointX4 * cosVehicleYaw - pointY4 * sinVehicleYaw + vehicleX;
       laserCloudDwz->points[i].y = pointX4 * sinVehicleYaw + pointY4 * cosVehicleYaw + vehicleY;
       laserCloudDwz->points[i].z = pointZ4 + vehicleZ;
@@ -691,22 +691,27 @@ int main(int argc, char** argv)
   while (status) {
     ros::spinOnce();
 
+    // if new laser cloud is received
     if (newlaserCloud) {
       newlaserCloud = false;
 
+      // add the current frame of point cloud to laserCloudStack
       laserCloudStack[laserCloudCount]->clear();
       *laserCloudStack[laserCloudCount] = *laserCloudDwz;
       laserCloudCount = (laserCloudCount + 1) % laserCloudStackNum;
 
+      // store the accumulated point clouds to plannerCloudStack
       plannerCloudStack->clear();
       for (int i = 0; i < laserCloudStackNum; i++) {
         *plannerCloudStack += *laserCloudStack[i];
       }
 
+      // downsize the plannerCloudStack to plannerCloud
       plannerCloud->clear();
       downSizeFilter.setInputCloud(plannerCloudStack);
       downSizeFilter.filter(*plannerCloud);
 
+      // pub the plannerCloud
       #if PLOTPATHSET == 1
       sensor_msgs::PointCloud2 plannerCloud2;
       pcl::toROSMsg(*plannerCloud, plannerCloud2);
