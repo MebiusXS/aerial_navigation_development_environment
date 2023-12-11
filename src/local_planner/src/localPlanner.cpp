@@ -33,44 +33,44 @@ const double PI = 3.1415926;
 
 // general parameters
 string pathFolder;
-string stateEstimationTopic = "/state_estimation";
-string depthCloudTopic = "/rgbd_camera/depth/points";
-double depthCloudDelay = 0;
-double depthCamPitchOffset = 0;
-double depthCamXOffset = 0;
-double depthCamYOffset = 0;
-double depthCamZOffset = 0;
-bool trackingCamBackward = false;
-double trackingCamXOffset = 0;
-double trackingCamYOffset = 0;
-double trackingCamZOffset = 0;
-double trackingCamScale = 1.0;
-double scanVoxelSize = 0.1;
-const int laserCloudStackNum = 1;
-int laserCloudCount = 0;
-int pointPerPathThre = 2;
-double maxRange = 4.0;
-double maxElev = 5.0;
-bool keepSurrCloud = true;
-double keepHoriDis = 1.0;
-double keepVertDis = 0.5;
-double lowerBoundZ = -1.2;
-double upperBoundZ = 1.2;
-double pitchDiffLimit = 35.0;
-double pitchWeight = 0.03;
-double sensorMaxPitch = 25.0;
-double sensorMaxYaw = 40.0;
-double yawDiffLimit = 60.0;
-double yawWeight = 0.015;
-double pathScale = 0.5;
-double minPathScale = 0.25;
-double pathScaleStep = 0.125;
-bool pathScaleBySpeed = true;
-double stopDis = 0.5;
-bool shiftGoalAtStart = false;
-double goalX = 0;
-double goalY = 0;
-double goalZ = 1.0;
+string stateEstimationTopic = "/state_estimation";      // default odometry topic name
+string depthCloudTopic = "/rgbd_camera/depth/points";   // default point cloud topic name
+double depthCloudDelay = 0;                             // depth cloud delay relative to odometry time (in seconds)
+double depthCamPitchOffset = 0;                         // the Pitch offset of the camera
+double depthCamXOffset = 0;                             // 
+double depthCamYOffset = 0;                             // 
+double depthCamZOffset = 0;                             // 
+bool trackingCamBackward = false;                       // whether the camera is installed backward
+double trackingCamXOffset = 0;                          // the X offset of the camera relative to vehicle
+double trackingCamYOffset = 0;                          // the Y offset of the camera relative to vehicle
+double trackingCamZOffset = 0;                          // the Z offset of the camera relative to vehicle
+double trackingCamScale = 1.0;                          // 
+double scanVoxelSize = 0.1;                             // 
+const int laserCloudStackNum = 1;                       // 
+int laserCloudCount = 0;                                // 
+int pointPerPathThre = 2;                               // 
+double maxRange = 4.0;                                  // the max range of laser
+double maxElev = 5.0;                                   // the upper limit of goalZ
+bool keepSurrCloud = true;                              // whether to keep the surrounding points
+double keepHoriDis = 1.0;                               // the horizontal distance in which the points will be kept if 'keepSurrCloud' is true
+double keepVertDis = 0.5;                               // the vertical distance in which the points will be kept if 'keepSurrCloud' is true
+double lowerBoundZ = -1.2;                              //
+double upperBoundZ = 1.2;                               //
+double pitchDiffLimit = 35.0;                           // 
+double pitchWeight = 0.03;                              // 
+double sensorMaxPitch = 25.0;                           // 
+double sensorMaxYaw = 40.0;                             // 
+double yawDiffLimit = 60.0;                             // 
+double yawWeight = 0.015;                               // 
+double pathScale = 0.5;                                 // 
+double minPathScale = 0.25;                             // 
+double pathScaleStep = 0.125;                           // 
+bool pathScaleBySpeed = true;                           // 
+double stopDis = 0.5;                                   // 
+bool shiftGoalAtStart = false;                          // whether to set the start point as the first goal or not
+double goalX = 0;                                       // X of the first goal
+double goalY = 0;                                       // Y of the first goal
+double goalZ = 1.0;                                     // Z of the first goal
 
 // path parameters, set according to path files
 const int pathNum = 4375;
@@ -92,8 +92,8 @@ float joyUp = 0;
 bool manualMode = true;
 bool autonomyMode = false;
 bool autoAdjustMode = false;
-int systemInitDelay = 5;
-int stateInitDelay = 100;
+int systemInitDelay = 5;                                // delay times to initialize laser cloud
+int stateInitDelay = 100;                               // delay times to initialize odometry if shiftGoalAtStart is true
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr laserCloud(new pcl::PointCloud<pcl::PointXYZ>());
 pcl::PointCloud<pcl::PointXYZ>::Ptr laserCloudCrop(new pcl::PointCloud<pcl::PointXYZ>());
@@ -140,8 +140,10 @@ float trackYaw = 0;
 
 pcl::VoxelGrid<pcl::PointXYZ> downSizeFilter;
 
+// Odometry callback function
 void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
 {
+  // Set the start point, after 'stateInitDelay' times of 'callback', as the first goal if 'shiftGoalAtStart' is true
   if (stateInitDelay >= 0 && shiftGoalAtStart) {
     if (stateInitDelay == 0) {
       goalX += trackingCamScale * odom->pose.pose.position.x;
@@ -152,6 +154,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     return;
   }
 
+  // get rpy and xyz of the vehicle
   double roll, pitch, yaw;
   geometry_msgs::Quaternion geoQuat = odom->pose.pose.orientation;
   tf::Matrix3x3(tf::Quaternion(geoQuat.x, geoQuat.y, geoQuat.z, geoQuat.w)).getRPY(roll, pitch, yaw);
@@ -160,6 +163,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   float vehicleY = trackingCamScale * odom->pose.pose.position.y;
   float vehicleZ = trackingCamScale * odom->pose.pose.position.z;
 
+  // if the camera is installed backward, negate the rp and xy
   if (trackingCamBackward) {
     roll = -roll;
     pitch = -pitch;
@@ -167,6 +171,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     vehicleY = -vehicleY;
   }
 
+  // derive the real position of the vehicle from the camera offset and the odometry-in
   float pointX1 = trackingCamXOffset;
   float pointY1 = trackingCamYOffset * cos(roll) - trackingCamZOffset * sin(roll);
   float pointZ1 = trackingCamYOffset * sin(roll) + trackingCamZOffset * cos(roll);
@@ -190,8 +195,10 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   odomZ[odomPointerLast] = vehicleZ;
 }
 
+// Point cloud callback function
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
 {
+  // pass the first 'systemInitDelay' frames of points
   if (systemInitDelay > 0) {
     systemInitDelay--;
     return;
@@ -201,9 +208,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
     return;
   }
 
+  // take depth cloud delay into calculation
   //laserTime = laserCloud2->header.stamp.toSec() - depthCloudDelay;
   laserTime = odomTime[odomPointerLast] - depthCloudDelay;
 
+  // keep time synchronized
   while (odomPointerFront != odomPointerLast) {
     int odomPointerNext = (odomPointerFront + 1) % odomQueLength;
     if (fabs(laserTime - odomTime[odomPointerFront]) < fabs(laserTime - odomTime[odomPointerNext])) {
@@ -226,10 +235,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
   float vehicleY = odomY[odomPointerFront];
   float vehicleZ = odomZ[odomPointerFront];
 
+  // transfer the laser cloud msg into laserCloud
   laserCloud->clear();
   pcl::fromROSMsg(*laserCloud2, *laserCloud);
   int laserCloudSize = laserCloud->points.size();
 
+  // filter laserCloud according to maxRange, store in laserCloudCrop
   laserCloudCrop->clear();
   for (int i = 0; i < laserCloudSize; i++) {
     if (laserCloud->points[i].z < maxRange) {
@@ -237,20 +248,24 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
     }
   }
 
+  // downsize the laserCloudCrop into laserCloudDwz
   laserCloudDwz->clear();
   downSizeFilter.setInputCloud(laserCloudCrop);
   downSizeFilter.filter(*laserCloudDwz);
 
   int laserCloudDwzSize = laserCloudDwz->points.size();
   for (int i = 0; i < laserCloudDwzSize; i++) {
+      // correct the coordinate directions 
       float pointX1 = laserCloudDwz->points[i].z;
       float pointY1 = -laserCloudDwz->points[i].x;
       float pointZ1 = -laserCloudDwz->points[i].y;
 
+      // transfer the points relative to vehicle coordinates, despite the orientation
       float pointX2 = pointX1 * cosDepthCamPitch + pointZ1 * sinDepthCamPitch + depthCamXOffset;
       float pointY2 = pointY1 + depthCamYOffset;
       float pointZ2 = -pointX1 * sinDepthCamPitch + pointZ1 * cosDepthCamPitch + depthCamZOffset;
 
+      // transfer the points relative to vehicle coordinates with roll and pitch
       float pointX3 = pointX2;
       float pointY3 = pointY2 * cosVehicleRoll - pointZ2 * sinVehicleRoll;
       float pointZ3 = pointY2 * sinVehicleRoll + pointZ2 * cosVehicleRoll;
@@ -259,12 +274,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       float pointY4 = pointY3;
       float pointZ4 = -pointX3 * sinVehiclePitch + pointZ3 * cosVehiclePitch;
 
+      // transfer the points relative to vehicle odometry coordinates and store in laserCloudDwz
       laserCloudDwz->points[i].x = pointX4 * cosVehicleYaw - pointY4 * sinVehicleYaw + vehicleX;
       laserCloudDwz->points[i].y = pointX4 * sinVehicleYaw + pointY4 * cosVehicleYaw + vehicleY;
       laserCloudDwz->points[i].z = pointZ4 + vehicleZ;
   }
 
+  // if 'keepSurrCloud' is true, the points surrounding the vehicle in a certain range, which is determined by 'keepHoriDis' and 'keepVertDis', will be kept
   if (keepSurrCloud) {
+    // filter the surrounding points and store them in laserCloudKeep, which already contains downsized surrounding points of last frame
     for (int i = 0; i < laserCloudDwzSize; i++) {
       float disX = laserCloudDwz->points[i].x - vehicleX;
       float disY = laserCloudDwz->points[i].y - vehicleY;
@@ -275,12 +293,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       }
     }
 
+    // take laserCloudKeepDwz, which contains surrounding points of the last frame, into calculation of the current frame
     *laserCloudDwz += *laserCloudKeepDwz;
 
+    // Downsize laserCloudKeep to laserCloudKeepDwz for the calculation in the next frame
     laserCloudKeepDwz->clear();
     downSizeFilter.setInputCloud(laserCloudKeep);
     downSizeFilter.filter(*laserCloudKeepDwz);
 
+    // filter laserCloudKeepDwz and store in laserCloudKeep for the accumulation in the next frame
     laserCloudKeep->clear();
     int laserCloudKeepDwzSize = laserCloudKeepDwz->points.size();
     for (int i = 0; i < laserCloudKeepDwzSize; i++) {
@@ -297,6 +318,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
   newlaserCloud = true;
 }
 
+// track point callback function
 void trackPointHandler(const nav_msgs::Odometry::ConstPtr& odom)
 {
   double roll, pitch, yaw;
@@ -311,6 +333,7 @@ void trackPointHandler(const nav_msgs::Odometry::ConstPtr& odom)
   trackZ = odom->pose.pose.position.z;
 }
 
+// function to read ply files
 int readPlyHeader(FILE *filePtr)
 {
   char str[50];
@@ -338,6 +361,7 @@ int readPlyHeader(FILE *filePtr)
   return pointNum;
 }
 
+// function to read start paths
 void readStartPaths()
 {
   string fileName = pathFolder + "/startPaths.ply";
@@ -371,6 +395,7 @@ void readStartPaths()
   fclose(filePtr);
 }
 
+// function to read paths
 #if PLOTPATHSET == 1
 void readPaths()
 {
@@ -413,6 +438,7 @@ void readPaths()
 }
 #endif
 
+// function to read path list
 void readPathList()
 {
   string fileName = pathFolder + "/pathList.ply";
@@ -453,6 +479,8 @@ void readPathList()
   fclose(filePtr);
 }
 
+
+// function to read correspondences
 void readCorrespondences()
 {
   string fileName = pathFolder + "/correspondences.txt";
@@ -492,6 +520,7 @@ void readCorrespondences()
   fclose(filePtr);
 }
 
+// joystick callback function
 void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
 {
   if (joy->axes[2] >= -0.1 || joy->axes[5] < -0.1) {
@@ -522,6 +551,7 @@ void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
   }
 }
 
+// waypoint callback function
 void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
 {
   goalX = goal->point.x;
@@ -531,6 +561,7 @@ void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
   if (goalZ > maxElev) goalZ = maxElev;
 }
 
+// autoMode callback function
 void autoModeHandler(const std_msgs::Float32::ConstPtr& autoMode)
 {
   if (autonomyMode) {
@@ -546,6 +577,7 @@ void autoModeHandler(const std_msgs::Float32::ConstPtr& autoMode)
   }
 }
 
+// clear surrounding cloud callback function, to reinitialize the kept range data
 void clearSurrCloudHandler(const std_msgs::Empty::ConstPtr& clear)
 {
   laserCloudKeep->clear();
