@@ -54,13 +54,13 @@ double maxElev = 5.0;                                   // the upper limit of go
 bool keepSurrCloud = true;                              // whether to keep the surrounding points
 double keepHoriDis = 1.0;                               // the horizontal distance in which the points will be kept if 'keepSurrCloud' is true
 double keepVertDis = 0.5;                               // the vertical distance in which the points will be kept if 'keepSurrCloud' is true
-double lowerBoundZ = -1.2;                              //
-double upperBoundZ = 1.2;                               //
-double pitchDiffLimit = 35.0;                           // 
+double lowerBoundZ = -1.2;                              // the z lower bound of path with reference to track point
+double upperBoundZ = 1.2;                               // the z upper bound of path with reference to track point
+double pitchDiffLimit = 35.0;                           // the max difference pitch angle (in degree) between the goal and the track point
 double pitchWeight = 0.03;                              // 
 double sensorMaxPitch = 25.0;                           // 
 double sensorMaxYaw = 40.0;                             // 
-double yawDiffLimit = 60.0;                             // 
+double yawDiffLimit = 60.0;                             // the max difference yaw angle (in degree) between the goal and the track point
 double yawWeight = 0.015;                               // 
 double pathScale = 0.5;                                 // 
 double minPathScale = 0.25;                             // 
@@ -89,9 +89,9 @@ const int gridVoxelNum = gridVoxelNumX * gridVoxelNumY * gridVoxelNumZ;
 float joyFwd = 0;
 float joyLeft = 0;
 float joyUp = 0;
-bool manualMode = true;
-bool autonomyMode = false;
-bool autoAdjustMode = false;
+bool manualMode = true;                                 // manual flight mode, totally controlled by the joystick controller
+bool autonomyMode = false;                              // way_point navigation flight mode
+bool autoAdjustMode = false;                            // 
 int systemInitDelay = 5;                                // delay times to initialize laser cloud
 int stateInitDelay = 100;                               // delay times to initialize odometry if shiftGoalAtStart is true
 
@@ -260,12 +260,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       float pointY1 = -laserCloudDwz->points[i].x;
       float pointZ1 = -laserCloudDwz->points[i].y;
 
-      // align the points to the vehicle coordinates, despite the orientation
+      // align the points to the vehicle coordinate frame, despite the orientation
       float pointX2 = pointX1 * cosDepthCamPitch + pointZ1 * sinDepthCamPitch + depthCamXOffset;
       float pointY2 = pointY1 + depthCamYOffset;
       float pointZ2 = -pointX1 * sinDepthCamPitch + pointZ1 * cosDepthCamPitch + depthCamZOffset;
 
-      // align the points to the vehicle coordinates with roll and pitch
+      // align the points to the vehicle coordinate frame with roll and pitch
       float pointX3 = pointX2;
       float pointY3 = pointY2 * cosVehicleRoll - pointZ2 * sinVehicleRoll;
       float pointZ3 = pointY2 * sinVehicleRoll + pointZ2 * cosVehicleRoll;
@@ -274,13 +274,13 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
       float pointY4 = pointY3;
       float pointZ4 = -pointX3 * sinVehiclePitch + pointZ3 * cosVehiclePitch;
 
-      // align the points to the vehicle odometry coordinates and store in laserCloudDwz
+      // align the points to the vehicle odometry coordinate frame and store in laserCloudDwz
       laserCloudDwz->points[i].x = pointX4 * cosVehicleYaw - pointY4 * sinVehicleYaw + vehicleX;
       laserCloudDwz->points[i].y = pointX4 * sinVehicleYaw + pointY4 * cosVehicleYaw + vehicleY;
       laserCloudDwz->points[i].z = pointZ4 + vehicleZ;
   }
 
-  // if 'keepSurrCloud' is true, the points surrounding the vehicle in a certain range, which is determined by 'keepHoriDis' and 'keepVertDis', will be kept
+  // if 'keepSurrCloud' is true, the points surrounding the vehicle in a certain range, which is defined by 'keepHoriDis' and 'keepVertDis', will be kept
   if (keepSurrCloud) {
     // filter the surrounding points and store them in laserCloudKeep, which already contains downsized surrounding points of last frame
     for (int i = 0; i < laserCloudDwzSize; i++) {
@@ -523,20 +523,20 @@ void readCorrespondences()
 // joystick callback function
 void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
 {
-  if (joy->axes[2] >= -0.1 || joy->axes[5] < -0.1) {
-    joyFwd = joy->axes[4];
+  if (joy->axes[2] >= -0.1 || joy->axes[5] < -0.1) {    // when Waypoint-flight button is not held or Manual-flight button is held
+    joyFwd = joy->axes[4];                              // (smart joystick mode or manual flight mode)
     joyLeft = yawDiffLimit * joy->axes[3];
     joyUp = pitchDiffLimit * joy->axes[1];
   }
 
-  if (joy->axes[5] < -0.1) {
+  if (joy->axes[5] < -0.1) {                            // when Manual-flight button is held (manual flight mode)
     manualMode = true;
     autonomyMode = false;
     autoAdjustMode = false;
   } else {
     manualMode = false;
 
-    if (joy->axes[2] < -0.1) {
+    if (joy->axes[2] < -0.1) {                          // when Waypoint-flight button is held (waypoint flight mode)
       if (!autonomyMode) joyFwd = 1.0;
       autonomyMode = true;
     } else {
@@ -545,7 +545,7 @@ void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
     }
   }
 
-  if (joy->buttons[5] > 0.5) {
+  if (joy->buttons[5] > 0.5) {                          // when Clear-point-cloud button is held
     laserCloudKeep->clear();
     laserCloudKeepDwz->clear();
   }
@@ -561,7 +561,7 @@ void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
   if (goalZ > maxElev) goalZ = maxElev;
 }
 
-// autoMode callback function
+// autoMode callback function, autoMode = desiredSpeed / maxSpeed
 void autoModeHandler(const std_msgs::Float32::ConstPtr& autoMode)
 {
   if (autonomyMode) {
@@ -725,6 +725,7 @@ int main(int argc, char** argv)
       float sinTrackYaw = sin(trackYaw);
       float cosTrackYaw = cos(trackYaw);
 
+      // align point cloud to track_point frame
       int plannerCloudSize = plannerCloud->points.size();
       for (int i = 0; i < plannerCloudSize; i++) {
         float pointX1 = plannerCloud->points[i].x - trackX;
@@ -754,6 +755,7 @@ int main(int argc, char** argv)
           clearPathPerGroupScore[i] = 0;
         }
 
+        // align goal point to track_point frame
         float goalX1 = (goalX - trackX) * cosTrackYaw + (goalY - trackY) * sinTrackYaw;
         float goalY1 = -(goalX - trackX) * sinTrackYaw + (goalY - trackY) * cosTrackYaw;
         float goalZ1 = goalZ - trackZ;
@@ -762,17 +764,18 @@ int main(int argc, char** argv)
         float relativeGoalY = goalY1;
         float relativeGoalZ = (goalX1 * sinTrackPitch + goalZ1 * cosTrackPitch);
 
-        float relativeGoalDis = sqrt(relativeGoalX * relativeGoalX + relativeGoalY * relativeGoalY);
+        float relativeGoalDis = sqrt(relativeGoalX * relativeGoalX + relativeGoalY * relativeGoalY);    // horizontal distance between goal point and track point
         float relativeGoalPitch = -atan2(relativeGoalZ, sqrt(relativeGoalX * relativeGoalX 
                               + relativeGoalY * relativeGoalY)) * 180.0 / PI;
         float relativeGoalYaw = atan2(relativeGoalY, relativeGoalX) * 180.0 / PI;
 
+        // limit the relativeGoalPitch/Yaw according to pitch/yawDiffLimit
         if (relativeGoalPitch < -pitchDiffLimit) relativeGoalPitch = -pitchDiffLimit;
         else if (relativeGoalPitch > pitchDiffLimit) relativeGoalPitch = pitchDiffLimit;
         if (relativeGoalYaw < -yawDiffLimit) relativeGoalYaw = -yawDiffLimit;
         else if (relativeGoalYaw > yawDiffLimit) relativeGoalYaw = yawDiffLimit;
 
-        if (manualMode || (autonomyMode && autoAdjustMode)) {
+        if (manualMode || (autonomyMode && autoAdjustMode)) {   // if manual flight mode or smart joystick mode
           relativeGoalDis = 1000.0;
           relativeGoalPitch = 0;
           relativeGoalYaw = 0;

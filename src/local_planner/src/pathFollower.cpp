@@ -40,8 +40,8 @@ double waypointInterval = 1.0;
 double waypointYaw = 45.0;
 double waypointZ = 2.0;
 bool autonomyMode = false;
-int pubSkipNum = 1;
-int pubSkipCount = 0;
+int pubSkipNum = 1;                         // times of skipping odometry message
+int pubSkipCount = 0;                       // counts of skipping odometry message, start with 0
 bool trackingCamBackward = false;
 double trackingCamXOffset = 0;
 double trackingCamYOffset = 0;
@@ -159,8 +159,10 @@ tf::TransformBroadcaster *tfBroadcasterPointer;
 FILE *desiredTrajFilePtr = NULL;
 FILE *executedTrajFilePtr = NULL;
 
+// odometry callback function
 void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
 {
+  // Set the start point, after 'stateInitDelay' times of 'callback', as the first goal if 'shiftGoalAtStart' is true
   if (stateInitDelay >= 0 && shiftGoalAtStart) {
     if (stateInitDelay == 0) {
       goalX += trackingCamScale * odom->pose.pose.position.x;
@@ -171,6 +173,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     return;
   }
 
+  // Once an odometry message is executed, skip following messages for 'pubSkipNum' times 
   pubSkipCount--;
   if (pubSkipCount >= 0) {
     return;
@@ -180,6 +183,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
 
   double odomTime = odom->header.stamp.toSec();
 
+  // get rpy, position, velocity and angular rate of the vehicle
   double roll, pitch, yaw;
   geometry_msgs::Quaternion geoQuat = odom->pose.pose.orientation;
   tf::Matrix3x3(tf::Quaternion(geoQuat.x, geoQuat.y, geoQuat.z, geoQuat.w)).getRPY(roll, pitch, yaw);
@@ -195,6 +199,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   vehicleAngRateZ = odom->twist.twist.angular.z;
   vehicleYaw = yaw;
 
+  // if the camera is installed backward, negate the rp, xy, vel_x/y and angular rate x/y
   if (trackingCamBackward) {
     roll = -roll;
     pitch = -pitch;
@@ -213,6 +218,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   float sinYaw = sin(yaw);
   float cosYaw = cos(yaw);
 
+  // derive the real position and velocity of the vehicle from the camera offset and the odometry-in
   float pointX1 = trackingCamXOffset;
   float pointY1 = trackingCamYOffset * cosRoll - trackingCamZOffset * sinRoll;
   float pointZ1 = trackingCamYOffset * sinRoll + trackingCamZOffset * cosRoll;
@@ -666,25 +672,25 @@ void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
 {
   joyTime = ros::Time::now().toSec();
 
-  if (joy->axes[2] >= -0.1 || joy->axes[5] < -0.1) {
-    joyFwd = joy->axes[4];
+  if (joy->axes[2] >= -0.1 || joy->axes[5] < -0.1) {    // when Waypoint-flight button is not held or Manual-flight button is held
+    joyFwd = joy->axes[4];                              // right joystick, pitch channel
     if (fabs(joyFwd) < joyDeadband) joyFwd = 0;
-    joyLeft = joy->axes[3];
+    joyLeft = joy->axes[3];                             // right joystick, roll channel
     if (fabs(joyLeft) < joyDeadband) joyLeft = 0;
-    joyUp = joy->axes[1];
+    joyUp = joy->axes[1];                               // left joystick, thrust channel
     if (fabs(joyUp) < joyDeadband) joyUp = 0;
-    joyYaw = joy->axes[0];
+    joyYaw = joy->axes[0];                              // left joystick, yaw channel
     if (fabs(joyYaw) < joyDeadband) joyYaw = 0;
   }
 
-  if (joy->axes[5] < -0.1) {
+  if (joy->axes[5] < -0.1) {                            // when Manual-flight button is held (manual flight mode)
     manualMode = true;
     autonomyMode = false;
     autoAdjustMode = false;
   } else {
     manualMode = false;
 
-    if (joy->axes[2] < -0.1) {
+    if (joy->axes[2] < -0.1) {                          // when Waypoint-flight button is held (waypoint flight mode)
       if (!autonomyMode) joyFwd = 1.0;
       autonomyMode = true;
     } else {
