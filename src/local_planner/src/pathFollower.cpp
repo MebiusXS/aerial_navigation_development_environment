@@ -183,7 +183,10 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
 
   double odomTime = odom->header.stamp.toSec();
 
-  // get rpy, position, velocity and angular rate of the vehicle
+  /*
+    Get rpy, position, velocity and angular rate of the vehicle. 
+    Notice that position is in local frame, and velocity and angular rate are in body frame.
+  */
   double roll, pitch, yaw;
   geometry_msgs::Quaternion geoQuat = odom->pose.pose.orientation;
   tf::Matrix3x3(tf::Quaternion(geoQuat.x, geoQuat.y, geoQuat.z, geoQuat.w)).getRPY(roll, pitch, yaw);
@@ -218,7 +221,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   float sinYaw = sin(yaw);
   float cosYaw = cos(yaw);
 
-  // derive the real position and velocity of the vehicle from the camera offset and the odometry-in
+  // derive the real position of the vehicle from the camera offset and the odometry-in
   float pointX1 = trackingCamXOffset;
   float pointY1 = trackingCamYOffset * cosRoll - trackingCamZOffset * sinRoll;
   float pointZ1 = trackingCamYOffset * sinRoll + trackingCamZOffset * cosRoll;
@@ -231,6 +234,12 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   vehicleY -= pointX2 * sinYaw + pointY2 * cosYaw - trackingCamYOffset;
   vehicleZ -= pointZ2 - trackingCamZOffset;
 
+  /*
+    derive the real velocity of the vehicle from the camera offset and the odometry-in
+    the vehicleVelX points towards the nose(pitch), 
+    the vehicleY points towards the wing(roll) 
+    and the vehicleVelZ points upward.
+  */
   vehicleVelX -= -trackingCamYOffset * vehicleAngRateZ + trackingCamZOffset * vehicleAngRateY;
   vehicleVelY -= -trackingCamZOffset * vehicleAngRateX + trackingCamXOffset * vehicleAngRateZ;
   vehicleVelZ -= -trackingCamXOffset * vehicleAngRateY + trackingCamYOffset * vehicleAngRateX;
@@ -267,6 +276,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     }
 
     if (odomTime > stopRotTime + stopRotDelayTime && autoAdjustMode) {
+      // if |dirToGoal| > stopRotYaw2
       if (fabs(dirToGoal) > stopRotYaw2 * PI / 180.0) {
         joyFwd = 0;
         joyLeft = 0;
@@ -283,6 +293,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
       }
     }
 
+    // pub autoMode value and pass autoAdjustMode value to localPlanner at 15 Hz
     if (odomTime - autoModeTime > 0.0667) {
       if (autoAdjustMode) autoMode.data = -1.0;
       else autoMode.data = desiredSpeed / maxSpeed;
@@ -294,7 +305,19 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     autoAdjustMode = false;
   }
 
+  /*
+    When it's manual flight mode or waypoint flight mode(autoAdjustMode), execute this part.
+
+    If it's manual flight mode, roll, pitch, vel_z and yaw rate are totally controlled by joystick.
+    In this case, roll and pitch get feedbacks of vehicleVelX/Y and are tuned by the following parameters:
+    stopVelXYGain, manualSpeedXY, posXYGain and lookAheadScale.
+
+    If it's waypoint flight mode(autoAdjustMode), roll and pitch are only defined by stopVelXYGain and vehicleVelX/Y, 
+    and vel_z is set to 0.
+    Yaw rate is defined by manualYawRate and joyYaw, which is either 0 or 1/-1 (referring to line 256-285).
+  */
   if (manualMode || (autonomyMode && autoAdjustMode)) {
+    // track odom = vehicle odom
     trackX = vehicleX;
     trackY = vehicleY;
     trackZ = vehicleZ;
@@ -312,14 +335,16 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     control_cmd.twist.linear.y = desiredPitch;
     control_cmd.twist.linear.z = manualSpeedZ * joyUp;
     control_cmd.twist.angular.z = manualYawRate * joyYaw * PI / 180.0;
-  } else {
+  }
+  // When it's smart joystick mode or waypoint flight mode(!autoAdjustMode), execute this part.
+  else {
     trackX = trackPath.poses[trackPathID].pose.position.x;
     trackY = trackPath.poses[trackPathID].pose.position.y;
     trackZ = trackPath.poses[trackPathID].pose.position.z;
 
     if (joyFwdDb < joyFwd) joyFwdDb = joyFwd;
     else if (joyFwdDb > joyFwd + joyDeadband) joyFwdDb = joyFwd + joyDeadband;
-    if (joyFwd <= joyDeadband) joyFwdDb = 0;
+    if (joyFwd <= joyDeadband) joyFwdDb = 0;                                                // cannot go backward
 
     float joyFwd2 = joyFwdDb;
     if (joyFwd2 < minSpeed / maxSpeed) joyFwd2 = 0;
@@ -335,6 +360,8 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     float dis = sqrt(disX * disX + disY * disY);
 
     int trackPathLength = trackPath.poses.size();
+
+    // make sure that the track point is the horizontally farthest point away from the vehicle on the trackPath and update the trackPathID
     while (trackPathID < trackPathLength - 1) {
       float trackNextX = trackPath.poses[trackPathID + 1].pose.position.x;
       float trackNextY = trackPath.poses[trackPathID + 1].pose.position.y;
@@ -356,6 +383,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
       }
     }
 
+    // calculate curv and slope 
     float curv = 0;
     float slope = 0;
     if (trackPathID > 0) {

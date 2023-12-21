@@ -56,11 +56,11 @@ double keepHoriDis = 1.0;                               // the horizontal distan
 double keepVertDis = 0.5;                               // the vertical distance in which the points will be kept if 'keepSurrCloud' is true
 double lowerBoundZ = -1.2;                              // the z lower bound of path with reference to track point
 double upperBoundZ = 1.2;                               // the z upper bound of path with reference to track point
-double pitchDiffLimit = 35.0;                           // the max difference pitch angle (in degree) between the goal and the track point
+double pitchDiffLimit = 35.0;                           // the max pitch angle difference (in degree) between the goal and the track point
 double pitchWeight = 0.03;                              // 
 double sensorMaxPitch = 25.0;                           // 
 double sensorMaxYaw = 40.0;                             // 
-double yawDiffLimit = 60.0;                             // the max difference yaw angle (in degree) between the goal and the track point
+double yawDiffLimit = 60.0;                             // the max yaw angle difference (in degree) between the goal and the track point
 double yawWeight = 0.015;                               // 
 double pathScale = 0.5;                                 // 
 double minPathScale = 0.25;                             // 
@@ -561,13 +561,14 @@ void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
   if (goalZ > maxElev) goalZ = maxElev;
 }
 
-// autoMode callback function, autoMode = desiredSpeed / maxSpeed
+// if autonomyMode is true, receive autoMode value and autoAdjustMode value from pathFollower, and adjust joyFwd according to autoMode
+// autoMode = desiredSpeed / maxSpeed or autoMode = -1.0
 void autoModeHandler(const std_msgs::Float32::ConstPtr& autoMode)
 {
   if (autonomyMode) {
-    if (autoMode->data < -0.5) {
+    if (autoMode->data < -0.5) {                        // if autoAdjustMode in pathFollower is true, autoMode = -1.0
       autoAdjustMode = true;
-    } else {
+    } else {                                            // if autoAdjustMode in pathFollower is false, autoMode = desiredSpeed / maxSpeed
       autoAdjustMode = false;
     }
 
@@ -775,7 +776,7 @@ int main(int argc, char** argv)
         if (relativeGoalYaw < -yawDiffLimit) relativeGoalYaw = -yawDiffLimit;
         else if (relativeGoalYaw > yawDiffLimit) relativeGoalYaw = yawDiffLimit;
 
-        if (manualMode || (autonomyMode && autoAdjustMode)) {   // if manual flight mode or smart joystick mode
+        if (manualMode || (autonomyMode && autoAdjustMode)) {   // if manual flight mode or waypoint flight mode
           relativeGoalDis = 1000.0;
           relativeGoalPitch = 0;
           relativeGoalYaw = 0;
