@@ -18,7 +18,7 @@
   <arg name="vehicleYaw" default="0"/>
   <arg name="use_gazebo" default="true"/>
   <arg name="gazebo_gui" default="true"/>
-  <arg name="world_name" default="office"/>
+  <arg name="world_name" default="office_simple_06m"/>
   <arg name="config" default="indoor"/>
   <arg name="realtime_factor" default="1.0"/>
 

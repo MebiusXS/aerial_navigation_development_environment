@@ -76,8 +76,8 @@ double goalZ = 1.0;                                     // Z of the first goal
 const int pathNum = 4375;
 const int groupNum = 25;
 float gridVoxelSize = 0.2;
-float searchRadiusHori = 1.2;
-float searchRadiusVert = 0.8;
+float searchRadiusHori = 0.3;
+float searchRadiusVert = 0.1;
 float gridVoxelOffsetX = 6.4;
 float gridVoxelOffsetY = 9.0;
 float gridVoxelOffsetZ = 3.3;
@@ -666,6 +666,7 @@ int main(int argc, char** argv)
   for (int i = 0; i < groupNum; i++) {
     startPaths[i].reset(new pcl::PointCloud<pcl::PointXYZ>());
   }
+  // 条件编译初始化
   #if PLOTPATHSET == 1
   for (int i = 0; i < pathNum; i++) {
     paths[i].reset(new pcl::PointCloud<pcl::PointXYZI>());
@@ -675,6 +676,7 @@ int main(int argc, char** argv)
     correspondences[i].resize(0);
   }
 
+  // 设置点云体素滤波尺寸
   downSizeFilter.setLeafSize(scanVoxelSize, scanVoxelSize, scanVoxelSize);
 
   readStartPaths();
@@ -744,7 +746,7 @@ int main(int argc, char** argv)
       bool pathPublished = false;
       float pathScaleOri = pathScale;
       if (manualMode || (autonomyMode && autoAdjustMode)) pathScale = minPathScale;
-      else if (pathScaleBySpeed) pathScale *= joyFwd;
+      else if (pathScaleBySpeed) pathScale *= joyFwd;    // joyFwd is 1 if autonomyMode is true
       if (pathScale < minPathScale) pathScale = minPathScale;
 
       while (pathScale >= minPathScale) {
@@ -835,12 +837,13 @@ int main(int argc, char** argv)
               yawDiff = 360.0 - yawDiff;
             }
 
-            float score = (1 - pitchWeight * pitchDiff) * (1 - yawWeight * yawDiff);
+            float score = (1 - pitchWeight * pitchDiff) * (1 - yawWeight * yawDiff);   // calculate path score
             if (score < 0) score = 0;
             clearPathPerGroupScore[pathList[i]] += score + 0.000001;
           }
         }
 
+        // search maxScore
         float maxScore = 0;
         int selectedGroupID = -1;
         for (int i = 0; i < groupNum; i++) {

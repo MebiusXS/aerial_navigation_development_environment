@@ -5,9 +5,9 @@ close all;
 %% generate path
 %{.
 dis = 2;
-horiAngle = 27.0;
+horiAngle = 44.0;
 deltaHoriAngle = horiAngle / 2;
-vertAngle = 9.0;
+vertAngle = 50.0;
 deltaVertAngle = vertAngle / 1;
 scale = 0.65;
 
@@ -125,8 +125,8 @@ pause(1.0);
 %% find correspondence
 %{.
 voxelSize = 0.2;
-searchRadiusHori = 1.2;
-searchRadiusVert = 0.8;
+searchRadiusHori = 0.3;
+searchRadiusVert = 0.1;
 sensorOffset = 0;
 offsetX = 6.4;
 offsetY = 9.0;

@@ -2,7 +2,7 @@
 
   <arg name="stateEstimationTopic" default="/state_estimation"/>
   <arg name="depthCloudTopic" default="/rgbd_camera/depth/points"/>
-  <arg name="autonomyMode" default="false"/>
+  <arg name="autonomyMode" default="true"/>
   <arg name="depthCloudDelay" default="0"/>
   <arg name="depthCamPitchOffset" default="0"/>
   <arg name="depthCamXOffset" default="0"/>
@@ -35,7 +35,7 @@
     <param name="trackingCamZOffset" value="$(arg trackingCamZOffset)" />
     <param name="trackingCamScale" value="$(arg trackingCamScale)" />
     <param name="scanVoxelSize" type="double" value="0.1" />
-    <param name="pointPerPathThre" type="int" value="2" />
+    <param name="pointPerPathThre" type="int" value="10" />
     <param name="maxRange" type="double" value="4.0" />
     <param name="maxElev" type="double" value="5.0" />
     <param name="keepSurrCloud" type="bool" value="true" />
