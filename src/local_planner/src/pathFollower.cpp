@@ -39,13 +39,13 @@ int waypointNum = 6;
 double waypointInterval = 1.0;
 double waypointYaw = 45.0;
 double waypointZ = 2.0;
-bool autonomyMode = false;
+bool autonomyMode = false;                  // waypoint flight mode 
 int pubSkipNum = 1;                         // times of skipping odometry message
 int pubSkipCount = 0;                       // counts of skipping odometry message, start with 0
-bool trackingCamBackward = false;
-double trackingCamXOffset = 0;
-double trackingCamYOffset = 0;
-double trackingCamZOffset = 0;
+bool trackingCamBackward = false;           // whether tracking camera is installed backward or not
+double trackingCamXOffset = 0;              // the X offset of the tracking camera with reference to the center of the vehicle
+double trackingCamYOffset = 0;              // the Y offset of the tracking camera with reference to the center of the vehicle
+double trackingCamZOffset = 0;              // the Z offset of the tracking camera with reference to the center of the vehicle
 double trackingCamScale = 1.0;
 double lookAheadScale = 0.2;
 double minLookAheadDis = 0.2;
@@ -57,7 +57,7 @@ double velXYGain = 0.4;
 double posXYGain = 0.05;
 double stopVelXYGain = 0.2;
 double stopPosXYGain = 0.2;
-double smoothIncrSpeed = 0.75;
+double smoothIncrSpeed = 0.75;              // speed increasing step
 double maxRollPitch = 30.0;
 double yawRateScale = 1.0;
 double yawGain = 2.0;
@@ -80,7 +80,7 @@ double stopRotYaw1 = 90.0;
 double stopRotYaw2 = 10.0;
 double stopDis = 0.5;
 double slowDis = 2.0;
-double joyDeadband = 0.1;
+double joyDeadband = 0.1;                   // dead zone of joystick
 double joyToSpeedDelay = 2.0;
 bool shiftGoalAtStart = false;
 double goalX = 0;
@@ -361,7 +361,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
 
     int trackPathLength = trackPath.poses.size();
 
-    // make sure that the track point is the horizontally farthest point away from the vehicle on the trackPath and update the trackPathID
+    // make sure that the track point is the horizontally nearest point away from the lookAheadDis on the trackPath and update the trackPathID
     while (trackPathID < trackPathLength - 1) {
       float trackNextX = trackPath.poses[trackPathID + 1].pose.position.x;
       float trackNextY = trackPath.poses[trackPathID + 1].pose.position.y;
@@ -411,7 +411,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     if (dirToPath > PI) dirToPath -= 2 * PI;
     else if (dirToPath < -PI) dirToPath += 2 * PI;
 
-    float vehicleVelPath = vehicleVelX * cos(dirToPath) + vehicleVelY * sin(dirToPath);
+    float vehicleVelPath = vehicleVelX * cos(dirToPath) + vehicleVelY * sin(dirToPath);      // vehicleVelX/Y projection on path direction
     float desiredSpeed2 = vehicleVelPath + smoothIncrSpeed;
     float velXYGain2 = velXYGain;
     float posXYGain2 = posXYGain;
@@ -424,12 +424,18 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
       slowTurnRate2 = slowTurnRate;
       if (fabs(curv) > minSlowTurnCurv) slowTurnTime = odomTime;
     }
-    if (autonomyMode) {
+    if (autonomyMode) {   // if waypoint flight mode
       if (desiredSpeed2 > slowTurnRate2 * desiredSpeed) desiredSpeed2 = slowTurnRate2 * desiredSpeed;
-    } else {
+    } else {              // if smart joystick flight mode
       if (desiredSpeed2 > slowTurnRate2 * maxSpeed * joyFwd2) desiredSpeed2 = slowTurnRate2 * maxSpeed * joyFwd2;
     }
     if (desiredSpeed2 < minSpeed) desiredSpeed2 = minSpeed;
+
+    /* Stop the vehicle in the following cases:
+       1. when joyFwd2 = 0 (joyFwd <= joyDeadBand) in smart joystick flight mode
+       2. when there is no path found (emergency stop)
+       3. when the vehicle achieved the goal
+    */
     if (joyFwd2 == 0 || !pathFound || (disToGoal < stopDis && autonomyMode && !autoAdjustMode)) {
       desiredSpeed2 = 0;
       velXYGain2 = stopVelXYGain;
@@ -438,7 +444,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
       yawBoostScale2 = 1.0;
       velZPath = 0;
       posZBoostScale2 = 1.0;
-    } else if (disToGoal < slowDis && autonomyMode && !autoAdjustMode) {
+    } else if (disToGoal < slowDis && autonomyMode && !autoAdjustMode) {  // slow down the vehicle smoothly
       float slowSpeed = (maxSpeed * (disToGoal - stopDis) + minSpeed * (slowDis - disToGoal)) / (slowDis - stopDis);
       if (desiredSpeed2 > slowSpeed) desiredSpeed2 = slowSpeed;
     }
@@ -461,10 +467,12 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
     disY = trackY - vehicleY;
     disZ = trackZ - vehicleZ;
 
+    // the distance between track point and vehicle in body frame
     float disX2 = disX * cos(vehicleYaw) + disY * sin(vehicleYaw);
     float disY2 = -disX * sin(vehicleYaw) + disY * cos(vehicleYaw);
     float dis2 = sqrt(disX2 * disX2 + disY2 * disY2);
 
+    // distance scaling down
     if (dis2 > lookAheadDis + stopDis) {
       disX2 *= (lookAheadDis + stopDis) / dis2;
       disY2 *= (lookAheadDis + stopDis) / dis2;
@@ -607,6 +615,7 @@ void stateEstimationHandler(const nav_msgs::Odometry::ConstPtr& odom)
   tfBroadcasterPointer->sendTransform(odomTrans);
 }
 
+// path callback function
 void pathHandler(const nav_msgs::Path::ConstPtr& path)
 {
   double pathTime = path->header.stamp.toSec();
@@ -619,10 +628,12 @@ void pathHandler(const nav_msgs::Path::ConstPtr& path)
     pathFound = false;
   }
 
+  // return when no odom
   if (odomSendIDPointer < 0) {
     return;
   }
-
+  
+  // keep odom and path time synchronized
   while (odomRecIDPointer != (odomSendIDPointer + 1) % stackNum) {
     int odomRecIDPointerNext = (odomRecIDPointer + 1) % stackNum;
     if (fabs(pathTime - odomTimeStack[odomRecIDPointer]) < fabs(pathTime - odomTimeStack[odomRecIDPointerNext])) {
@@ -632,13 +643,13 @@ void pathHandler(const nav_msgs::Path::ConstPtr& path)
   }
 
   int trackPathRecID = trackPathIDStack[odomRecIDPointer];
-  if (trackPathRecID < 100) {
+  if (trackPathRecID < 100) {    // if trackPathRecID < 100, partly keep the trackPath before track point
     trackPath2 = trackPath;
     trackPath.poses.resize(trackPathRecID + pathLength);
     for (int i = 0; i <= trackPathRecID; i++) {
       trackPath.poses[i] = trackPath2.poses[i];
     }
-  } else {
+  } else {                       // if trackPathRecID >= 100, partly keep 100 poses of the trackPath before track point
     trackPath2.poses.resize(101);
     for (int i = 0; i <= 100; i++) {
       trackPath2.poses[i] = trackPath.poses[trackPathRecID + i - 100];
@@ -649,6 +660,7 @@ void pathHandler(const nav_msgs::Path::ConstPtr& path)
     }
   }
 
+  // When it's manual flight mode or waypoint flight mode(autoAdjustMode), track point = vehicle point
   if (manualMode || (autonomyMode && autoAdjustMode)) {
     trackPath.poses[trackPathRecID].pose.position.x = trackX;
     trackPath.poses[trackPathRecID].pose.position.y = trackY;
@@ -671,6 +683,7 @@ void pathHandler(const nav_msgs::Path::ConstPtr& path)
   float sinTrackYaw = sin(trackYaw);
   float cosTrackYaw = cos(trackYaw);
 
+  // push the subscribed path into trackPath
   for (int i = 1; i < pathLength; i++) {
     float trackX2 = cosTrackPitch * path->poses[i].pose.position.x + sinTrackPitch * path->poses[i].pose.position.z;
     float trackY2 = path->poses[i].pose.position.y;
@@ -681,6 +694,7 @@ void pathHandler(const nav_msgs::Path::ConstPtr& path)
     trackPath.poses[trackPathRecID + i].pose.position.z = trackZ2 + trackZ;
   }
 
+  // publish trackPath to display on rviz
   int trackPathLength = trackPath.poses.size();
   if (trackPathLength < 500) {
     trackPathShow = trackPath;
@@ -727,6 +741,7 @@ void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
     }
   }
 
+  // define desiredSpeed by joySpeed
   float joySpeed = joy->axes[4];
   if (fabs(joySpeed) < joyDeadband) joySpeed = 0;
 
@@ -736,6 +751,7 @@ void joystickHandler(const sensor_msgs::Joy::ConstPtr& joy)
   else if (desiredSpeed > maxSpeed) desiredSpeed = maxSpeed;
 }
 
+// callback function of goal
 void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
 {
   goalX = goal->point.x;
@@ -743,10 +759,12 @@ void goalHandler(const geometry_msgs::PointStamped::ConstPtr& goal)
   goalZ = goal->point.z;
 }
 
+// callback function of '/speed' topic, published by waypointExample
 void speedHandler(const std_msgs::Float32::ConstPtr& speed)
 {
   double speedTime = ros::Time::now().toSec();
 
+  // When speedTime - joyTime < joyToSpeedDelay, ignore '/speed' and take '/joy' into calculation.
   if (speedTime - joyTime > joyToSpeedDelay) {
     desiredSpeed = maxSpeed * speed->data;
     if (desiredSpeed < minSpeed) desiredSpeed = minSpeed;

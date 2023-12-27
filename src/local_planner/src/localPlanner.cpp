@@ -36,14 +36,14 @@ string pathFolder;
 string stateEstimationTopic = "/state_estimation";      // default odometry topic name
 string depthCloudTopic = "/rgbd_camera/depth/points";   // default point cloud topic name
 double depthCloudDelay = 0;                             // depth cloud delay relative to odometry time (in seconds)
-double depthCamPitchOffset = 0;                         // the Pitch offset of the camera
-double depthCamXOffset = 0;                             // 
-double depthCamYOffset = 0;                             // 
-double depthCamZOffset = 0;                             // 
+double depthCamPitchOffset = 0;                         // the Pitch offset of the depth camera
+double depthCamXOffset = 0;                             // the X offset of the depth camera with reference to the center of the vehicle
+double depthCamYOffset = 0;                             // the Y offset of the depth camera with reference to the center of the vehicle
+double depthCamZOffset = 0;                             // the Z offset of the depth camera with reference to the center of the vehicle
 bool trackingCamBackward = false;                       // whether the camera is installed backward
-double trackingCamXOffset = 0;                          // the X offset of the camera with reference to the center of the vehicle
-double trackingCamYOffset = 0;                          // the Y offset of the camera with reference to the center of the vehicle
-double trackingCamZOffset = 0;                          // the Z offset of the camera with reference to the center of the vehicle
+double trackingCamXOffset = 0;                          // the X offset of the tracking camera with reference to the center of the vehicle
+double trackingCamYOffset = 0;                          // the Y offset of the tracking camera with reference to the center of the vehicle
+double trackingCamZOffset = 0;                          // the Z offset of the tracking camera with reference to the center of the vehicle
 double trackingCamScale = 1.0;                          // 
 double scanVoxelSize = 0.1;                             // point cloud voxel size
 const int laserCloudStackNum = 1;                       // the number of frames for which you want to accumulate point clouds
@@ -318,7 +318,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloud2)
   newlaserCloud = true;
 }
 
-// track point callback function
+// track point subscribed from pathFollower, all the planning is base on track point
 void trackPointHandler(const nav_msgs::Odometry::ConstPtr& odom)
 {
   double roll, pitch, yaw;
